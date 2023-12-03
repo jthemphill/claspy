@@ -2,7 +2,10 @@ Claspy is a python constraint solver based on the answer set solver 'clasp'. It 
 
 It requires the program 'clasp' from: http://www.cs.uni-potsdam.de/clasp/
 On Debian/Ubuntu:
+
+```
 apt-get install clasp
+```
 
 After installing clasp, put claspy.py in your python path or in your working directory.
 
