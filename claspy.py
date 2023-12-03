@@ -60,6 +60,9 @@
 # Subtracting from an IntVar requires that the result is positive,
 # so you usually want to add to the other side of the equation instead.
 
+from __future__ import absolute_import, division, generator_stop, print_function, unicode_literals
+
+from functools import reduce
 import subprocess
 from time import time, strftime
 
@@ -159,9 +162,9 @@ def reset():
     last_bool = 1  # reserved in clasp
 
     TRUE_BOOL = BoolVar()
+    solution = set([TRUE_BOOL.index])
     require(TRUE_BOOL)
     FALSE_BOOL = ~TRUE_BOOL
-    solution = set([TRUE_BOOL.index])
 
     for cache in memo_caches:
         cache.clear()
@@ -196,7 +199,7 @@ def add_rule(vals):
     global clasp_rules
     clasp_rules.append(vals)
     if need_update():
-        print len(clasp_rules), 'rules'
+        print(len(clasp_rules), 'rules')
 
 def lit2str(literals):
     """For debugging, formats the given literals as a string matching
@@ -212,33 +215,33 @@ def head2str(head):
 def add_basic_rule(head, literals):
     # See rule types in lparse.pdf pp.88 (pdf p.92)
     if verbose:
-        if len(literals) == 0: print head2str(head) + '.'
-        else: print head2str(head), ':-', lit2str(literals) + '.'
+        if len(literals) == 0: print(head2str(head) + '.')
+        else: print(head2str(head), ':-', lit2str(literals) + '.')
     assert head > 0
     literals = optimize_basic_rule(head, literals)
     if literals is None:  # optimization says to skip this rule
-        if verbose: print '#opt'
+        if verbose: print('#opt')
         return
     if verbose:
-        if len(literals) == 0: print '#opt', head2str(head) + '.'
-        else: print '#opt', head2str(head), ':-', lit2str(literals) + '.'
+        if len(literals) == 0: print('#opt', head2str(head) + '.')
+        else: print('#opt', head2str(head), ':-', lit2str(literals) + '.')
     # format: 1 head #literals #negative [negative] [positive]
-    negative_literals = map(abs, filter(lambda x: x < 0, literals))
-    positive_literals = filter(lambda x: x > 0, literals)
+    negative_literals = list(map(abs, filter(lambda x: x < 0, literals)))
+    positive_literals = list(filter(lambda x: x > 0, literals))
     add_rule([1, head, len(literals), len(negative_literals)] +
              negative_literals + positive_literals)
 
 def add_choice_rule(heads, literals):
     if verbose:
         if len(literals) == 0:
-            print '{', lit2str(heads), '}.'
+            print('{', lit2str(heads), '}.')
         else:
-            print '{', lit2str(heads), '} :-', lit2str(literals)
+            print('{', lit2str(heads), '} :-', lit2str(literals))
     for i in heads:
         assert i > 0
     # format: 3 #heads [heads] #literals #negative [negative] [positive]
-    negative_literals = map(abs, filter(lambda x: x < 0, literals))
-    positive_literals = filter(lambda x: x > 0, literals)
+    negative_literals = list(map(abs, filter(lambda x: x < 0, literals)))
+    positive_literals = list(filter(lambda x: x > 0, literals))
     add_rule([3, len(heads)] + heads +
              [len(literals), len(negative_literals)] +
              negative_literals + positive_literals)
@@ -246,23 +249,23 @@ def add_choice_rule(heads, literals):
 def add_constraint_rule(head, bound, literals):
     # Note that constraint rules ignore repeated literals
     if verbose:
-        print head2str(head), ':-', bound, '{', lit2str(literals), '}.'
+        print(head2str(head), ':-', bound, '{', lit2str(literals), '}.')
     assert head > 0
     # format: 2 head #literals #negative bound [negative] [positive]
-    negative_literals = map(abs, filter(lambda x: x < 0, literals))
-    positive_literals = filter(lambda x: x > 0, literals)
+    negative_literals = list(map(abs, filter(lambda x: x < 0, literals)))
+    positive_literals = list(filter(lambda x: x > 0, literals))
     add_rule([2, head, len(literals), len(negative_literals), bound] +
              negative_literals + positive_literals)
 
 def add_weight_rule(head, bound, literals):
     # Unlike constraint rules, weight rules count repeated literals
     if verbose:
-        print head2str(head), ':-', bound, '[',
-        print ', '.join(map(lambda x: x + '=1', lit2str(literals).split(', '))), '].'
+        print(head2str(head), ':-', bound, '[',)
+        print(', '.join(map(lambda x: x + '=1', lit2str(literals).split(', '))), '].')
     assert head > 0
     # format: 5 head bound #literals #negative [negative] [positive] [weights]
-    negative_literals = map(abs, filter(lambda x: x < 0, literals))
-    positive_literals = filter(lambda x: x > 0, literals)
+    negative_literals = list(map(abs, filter(lambda x: x < 0, literals)))
+    positive_literals = list(filter(lambda x: x > 0, literals))
     weights = [1 for i in range(len(literals))]
     add_rule([5, head, bound, len(literals), len(negative_literals)] +
              negative_literals + positive_literals + weights)
@@ -284,9 +287,23 @@ def optimize_basic_rule(head, literals):
                 return None
             # if the literal is true, the literal is unnecessary
             if x in single_vars:
-                new_literals = filter(lambda y: y != x, literals)
+                new_literals = list(filter(lambda y: y != x, literals))
                 return optimize_basic_rule(head, new_literals)
     return literals
+
+def parse_atoms(line):
+    # type: (str) -> list[str]
+    """Grab the indices from a line of clasp output
+    
+    >>> parse_atoms("v2  v3")
+    [2, 3]
+
+    """
+    parsed = []
+    for token in line.split():
+        if token[0] == 'v':
+            parsed.append(int(token[1:]))
+    return parsed
 
 start_time = time()  # time when the library is loaded
 solution = None  # set containing indices of true variables
@@ -296,52 +313,57 @@ def solve():
     values."""
     global last_bool, solution, debug_constraints, last_update
 
-    print 'Solving', last_bool, 'variables,', len(clasp_rules), 'rules'
+    print('Solving', last_bool, 'variables,', len(clasp_rules), 'rules')
 
     clasp_process = subprocess.Popen(CLASP_COMMAND.split(),
                                      stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE)
+    def clasp_write(s):
+        clasp_process.stdin.write(bytes(s, encoding='ascii'))
+
     try:
         for rule in clasp_rules:
-            clasp_process.stdin.write(' '.join(map(str, rule)) + '\n')
+            clasp_write(' '.join(map(str, rule)) + '\n')
     except IOError:
         # The stream may be closed early if there is obviously no
         # solution.
-        print 'Stream closed early!'
+        print('Stream closed early!')
         return False
 
-    print >>clasp_process.stdin, 0  # end of rules
+    clasp_write('0\n')  # end of rules
     # print the literal names
     for i in range(2, last_bool+1):
-        print >>clasp_process.stdin, i, 'v' + str(i)
+        clasp_write(f"{i}, {'v' + str(i)}\n")
     # print the compute statement
-    clasp_process.stdin.write('0\nB+\n0\nB-\n1\n0\n1\n')
+    clasp_write('0\nB+\n0\nB-\n1\n0\n1\n')
     if clasp_process.stdout is None:  # debug mode
         return
     clasp_process.stdin.close()
     found_solution = False
     clasp_output = []
     for line in clasp_process.stdout:
-        if line.startswith('c Answer:'):
+        line = line.decode(encoding='ascii').lstrip().rstrip()
+        print(line.rstrip())
+        if line.startswith('Answer:'):
             solution = set()
-        if line[0] == 'v':  # this is a solution line
+        if line.startswith('v'):  # this is a solution line
             assert not found_solution
-            solution = set(map(lambda s: int(s[1:]), line.rstrip().split(' ')))
+            solution = set(parse_atoms(line))
             found_solution = True
-            if verbose: print line.rstrip()
+            if verbose: print(line.rstrip())
         else:
             clasp_output.append(line.rstrip())
-    if 'SATISFIABLE' in clasp_output: print 'SATISFIABLE'
-    elif 'UNSATISFIABLE' in clasp_output: print 'UNSATISFIABLE'
-    else: print '\n'.join(clasp_output)  # show info if there was an error
-    print
-    print 'Total time: %.2fs' % (time() - start_time)
+    if 'SATISFIABLE' in clasp_output: print('SATISFIABLE')
+    elif 'UNSATISFIABLE' in clasp_output: print('UNSATISFIABLE')
+    else: print('\n'.join(clasp_output))  # show info if there was an error
+    print()
+    print('Total time: %.2fs' % (time() - start_time))
     print
     if solution and debug_constraints:
         for x, s in debug_constraints:
             if not x.value():
-                print "Failed constraint:", s
-        print
+                print("Failed constraint:", s)
+        print()
     last_update = time()  # reset for future searches
     return found_solution
 
@@ -364,9 +386,9 @@ class BoolVar(object):
         if val is None:
             self.index = new_literal()
             add_choice_rule([self.index], [])  # define the var with a choice rule
-        elif val is 'internal':  # don't create a choice rule. (for internal use)
+        elif type(val) is str and val == 'internal':  # don't create a choice rule. (for internal use)
             self.index = new_literal()
-        elif val is 'noinit':  # don't allocate an index. (for internal use)
+        elif type(val) is str and val == 'noinit':  # don't allocate an index. (for internal use)
             return
         elif isinstance(val, BoolVar):
             self.index = val.index
@@ -382,6 +404,8 @@ class BoolVar(object):
             self.index = result.index
         else:
             raise TypeError("Can't convert to BoolVar: " + str(val) + " " + str(type(val)))
+    def __hash__(self):
+        return hash(self.hash_object())
     def hash_object(self):
         return ('BoolVar', self.index)
     def value(self):
@@ -467,7 +491,7 @@ def at_least(n, bools):
     assert type(n) is int
     bools = map(BoolVar, bools)
     result = BoolVar('internal')
-    add_weight_rule(result.index, n, map(lambda x: x.index, bools))
+    add_weight_rule(result.index, n, list(map(lambda x: x.index, bools)))
     return result
 
 def at_most(n, bools):
@@ -506,7 +530,7 @@ def set_bits(n):
     global NUM_BITS, BITS
     if last_bool > 2:  # true/false already defined
         raise RuntimeError("Can't change number of bits after defining variables")
-    print 'Setting integers to', n, 'bits'
+    print('Setting integers to', n, 'bits')
     NUM_BITS = n
     BITS = range(NUM_BITS)
 
@@ -572,6 +596,8 @@ class IntVar(object):
             require(reduce(lambda a, b: a | b, map(lambda x: self == x, val)))
         else:
             raise TypeError("Can't convert to IntVar: " + str(val))
+    def __hash__(self):
+        return hash(self.hash_object())
     def hash_object(self):
         return ('IntVar',) + tuple(map(lambda b: b.index, self.bits))
     def value(self):
@@ -625,8 +651,8 @@ class IntVar(object):
         pred = BoolVar(pred)
         alt = IntVar(alt)
         result = IntVar(0)  # don't allocate bools yet
-        result.bits = map(lambda c, a: c.cond(pred, a),
-                          cons.bits, alt.bits)
+        result.bits = list(map(lambda c, a: c.cond(pred, a),
+                               cons.bits, alt.bits))
         return result
     @memoized
     def __lshift__(self, i):
@@ -722,16 +748,18 @@ class MultiVar(object):
             return
         for v in values:
             if isinstance(v, BoolVar) or type(v) is IntVar or type(v) is MultiVar:
-                raise RuntimeException("Can't convert other variables to MultiVar")
+                raise RuntimeError("Can't convert other variables to MultiVar")
         # TODO: optimize two-value case to single boolean
         for v in set(values):
             self.vals[v] = BoolVar()
         # constrain exactly one value to be true
         require(sum_bools(1, self.vals.values()))
+    def __hash__(self):
+        return hash(self.hash_object())
     def hash_object(self):
-        return ('MultiVar',) + tuple(map(lambda (v,b): (v, b.index), self.vals.iteritems()))
+        return ('MultiVar',) + tuple([(v, b.index) for (v, b) in self.vals.items()])
     def value(self):
-        for v, b in self.vals.iteritems():
+        for v, b in self.vals.items():
             if b.value():
                 return v
         return '???'  # unknown
@@ -739,10 +767,10 @@ class MultiVar(object):
         return str(self.value())
     def info(self):
         return ('MultiVar[' + ','.join([str(v) + ':' + str(b.index)
-                                        for v,b in self.vals.iteritems()]) +
+                                        for v,b in self.vals.items()]) +
                 ']=' + str(self))
     def boolean_op(a, op, b):
-        """Computes binary op(a,b) where 'a' is a MultiVal.  Returns a BoolVar."""
+        """Computes binary op(a,b) where 'a' is a MultiVar.  Returns a BoolVar."""
         if type(b) is not MultiVar:
             b = MultiVar(b)
         # Optimization: see if there are fewer terms for op=true or
@@ -750,16 +778,16 @@ class MultiVar(object):
         # better to test for all terms which are NOT equal.
         true_count = 0
         false_count = 0
-        for a_val, a_bool in a.vals.iteritems():
-            for b_val, b_bool in b.vals.iteritems():
+        for a_val, a_bool in a.vals.items():
+            for b_val, b_bool in b.vals.items():
                 if op(a_val, b_val):
                     true_count += 1
                 else:
                     false_count += 1
         invert = false_count < true_count
         terms = []
-        for a_val, a_bool in a.vals.iteritems():
-            for b_val, b_bool in b.vals.iteritems():
+        for a_val, a_bool in a.vals.items():
+            for b_val, b_bool in b.vals.items():
                 term = op(a_val, b_val) ^ invert
                 terms.append(cond(term, a_bool & b_bool, False))
         if terms:
@@ -774,8 +802,8 @@ class MultiVar(object):
         if type(b) is not MultiVar:
             b = MultiVar(b)
         result = MultiVar()
-        for a_val, a_bool in a.vals.iteritems():
-            for b_val, b_bool in b.vals.iteritems():
+        for a_val, a_bool in a.vals.items():
+            for b_val, b_bool in b.vals.items():
                 result_val = op(a_val, b_val)
                 result_bool = a_bool & b_bool
                 # TODO: make this work for b as a variable
@@ -794,10 +822,13 @@ class MultiVar(object):
     @memoized
     def __mul__(a, b): return a.generic_op(lambda x, y: x * y, b)
     @memoized
-    def __div__(a, b): return a.generic_op(lambda x, y: x / y, b)
+    def __truediv__(a, b): return a.generic_op(lambda x, y: x / y, b)
     @memoized
     def __gt__(a, b): return a.boolean_op(lambda x, y: x > y, b)
-    def __lt__(a, b): return MultiVar(b) > a
+    def __lt__(a, b):
+        if not isinstance(b, MultiVar):
+            b = MultiVar(b)
+        return b > a
     def __ge__(a, b): return ~(a < b)
     def __le__(a, b): return ~(a > b)
     @memoized
@@ -807,9 +838,9 @@ class MultiVar(object):
         pred = BoolVar(pred)
         alt = MultiVar(alt)
         result = MultiVar()
-        for v, b in cons.vals.iteritems():
+        for v, b in cons.vals.items():
             result.vals[v] = pred & b
-        for v, b in alt.vals.iteritems():
+        for v, b in alt.vals.items():
             if v in result.vals:
                 result.vals[v] = result.vals[v] | (~pred & b)
             else:

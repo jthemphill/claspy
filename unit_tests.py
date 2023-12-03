@@ -2,6 +2,8 @@
 #
 # Unit tests for claspy.
 
+from __future__ import absolute_import, division, generator_stop, print_function, unicode_literals
+
 from claspy import *
 
 ########## BoolVars ##########
@@ -589,4 +591,4 @@ require(a != 'x')
 assert not solve()
 
 
-print 'ALL TESTS PASSED'
+print('ALL TESTS PASSED')
